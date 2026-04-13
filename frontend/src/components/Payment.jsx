@@ -40,32 +40,46 @@ const Payment = () => {
       const res = await fetch('/api/documents');
       const data = await res.json();
       
-      const formatted = data.map(d => ({
-        ...d,
-        id: d._id,
-        date: d.date ? d.date.split('T')[0] : "",
-        recordType: d.documentType || "",
-        recordNo: d.recordNo || d.ecNo || d.tpNo || "",
-        vendor: d.vendor || "",
-        customerName: d.customerName || "",
-        office: d.office || "",
-        nagar: d.nagar || "",
-        tpNo: d.tpNo || "",
-        plotNo: d.plotNo || "",
-        reference: d.reference || d.vendor || "",
-        deed: d.deed || d.agreementType || "",
-        docNo: d.docNo || "",
-        fieldVisit: d.fieldVisit || "No",
-        returnDocument: d.returnDocument || "No",
-        amount: d.amount || d.editFee || 0,
-        commission: d.commission || d.stamp || 0,
-        others: d.others || 0,
-        total: d.totalFee || 0,
-        received: d.received || 0,
-        balance: d.balance || 0,
-        status: d.status || "Pending"
-      }));
-      setPaymentData(formatted);
+      const flattenedPayments = [];
+      data.forEach(doc => {
+        if (doc.payments && doc.payments.length > 0) {
+          doc.payments.forEach(p => {
+             flattenedPayments.push({
+                ...p,
+                id: `${doc._id}_${p._id || Math.random()}`,
+                docId: doc._id,
+                date: p.date ? p.date.split('T')[0] : "",
+                recordType: doc.documentType || "",
+                recordNo: doc.recordNo || doc.ecNo || doc.tpNo || "",
+                vendor: doc.vendor || "",
+                customerName: doc.customerName || "",
+                office: doc.office || "",
+                nagar: doc.nagar || "",
+                tpNo: doc.tpNo || "",
+                plotNo: doc.plotNo || "",
+                reference: doc.reference || doc.vendor || "",
+                deed: doc.deed || doc.agreementType || "",
+                docNo: doc.docNo || "",
+                fieldVisit: doc.fieldVisit || "No",
+                returnDocument: doc.returnDocument || "No",
+                fullAmount: Number(doc.amount || doc.editFee || 0) + Number(doc.commission || doc.stamp || 0) + Number(doc.others || 0),
+                pAmount: Number(p.amount || 0), // Transaction amount
+                docReceived: Number(doc.received || 0), // Total received for doc
+                docBalance: Number(doc.balance || 0),   // Remaining balance for doc
+                note: p.note || "-",
+                time: p.time || "",
+                status: doc.status || "Pending"
+             });
+          });
+        }
+      });
+      // Sort: Latest payments first
+      flattenedPayments.sort((a, b) => {
+        const dateA = new Date(`${a.date} ${a.time}`);
+        const dateB = new Date(`${b.date} ${b.time}`);
+        return dateB - dateA;
+      });
+      setPaymentData(flattenedPayments);
     } catch(err) {
       console.error(err);
     }
@@ -76,7 +90,7 @@ const Payment = () => {
   }, []);
 
   useEffect(() => {
-    let data = [...paymentData].filter(item => item.received > 0);
+    let data = [...paymentData];
 
     const q = searchTerm.trim().toLowerCase();
     if (q) {
@@ -172,8 +186,18 @@ const Payment = () => {
 
   const totalCount = filteredData.length;
   const pendingCount = filteredData.filter(item => item.status === "Pending").length;
-  const totalPaid = filteredData.filter(item => item.status === "Paid").reduce((sum, item) => sum + item.total, 0);
-  const totalPending = filteredData.filter(item => item.status === "Pending").reduce((sum, item) => sum + item.total, 0);
+  // Calculate unique document totals for the stats
+  const uniqueDocIds = [...new Set(filteredData.map(d => d.docId))];
+  let totalOverallAmount = 0;
+  let totalOverallReceived = 0;
+  
+  uniqueDocIds.forEach(id => {
+      const firstOccur = filteredData.find(d => d.docId === id);
+      totalOverallAmount += (firstOccur.fullAmount || 0);
+      totalOverallReceived += (firstOccur.docReceived || 0);
+  });
+
+  const totalOverallPending = totalOverallAmount - totalOverallReceived;
 
   return (
     <div className="layout-page">
@@ -236,10 +260,28 @@ const Payment = () => {
             background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(20px);
             border-radius: 28px; border: none; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); overflow: hidden;
           }
-          .details-modal .modal-header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: none; padding: 24px 32px; color: white; display: flex; align-items: center; }
-          .details-modal .modal-title { font-family: 'Playfair Display', serif; font-weight: 700; font-size: 1.6rem; letter-spacing: -0.5px; }
+          .details-modal .modal-header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: none; padding: 20px 32px; color: white; display: flex; align-items: center; }
+          .details-modal .modal-title { font-family: 'Playfair Display', serif; font-weight: 700; font-size: 1.4rem; letter-spacing: -0.5px; }
           .details-modal .btn-close { filter: invert(1) grayscale(100%) brightness(200%); opacity: 0.8; }
-          .details-modal .modal-body { padding: 32px; }
+          .details-modal .modal-body { padding: 0; background: #f8fafc !important; }
+
+          .receipt-banner { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 40px; text-align: center; color: white; position: relative; }
+          .receipt-banner::after { content: ""; position: absolute; bottom: -20px; left: 0; right: 0; height: 40px; background: #f8fafc; border-radius: 50% 50% 0 0; }
+          .receipt-label { text-transform: uppercase; letter-spacing: 2px; font-size: 0.75rem; opacity: 0.7; margin-bottom: 8px; font-weight: 700; }
+          .receipt-amount-big { font-size: 3.5rem; font-weight: 800; font-family: 'Playfair Display', serif; color: #fbbf24; line-height: 1; margin-bottom: 5px; }
+          
+          .receipt-summary-row { display: grid; grid-template-columns: 1fr 1fr 1fr; background: white; margin: -20px 32px 32px; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); position: relative; z-index: 5; border: 1px solid #e2e8f0; }
+          .summary-item { text-align: center; border-right: 1px solid #f1f5f9; }
+          .summary-item:last-child { border-right: none; }
+          .summary-label { font-size: 0.7rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; }
+          .summary-val { font-size: 1.2rem; font-weight: 700; color: #1e293b; }
+
+          .receipt-section-title { font-size: 0.85rem; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 1px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; display: flex; align-items: center; gap: 10px; }
+          
+          .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; padding: 0 32px 32px; }
+          .info-block { background: white; padding: 16px; border-radius: 16px; border: 1px solid #f1f5f9; }
+          .info-lbl { font-size: 0.7rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; }
+          .info-val { font-size: 0.95rem; font-weight: 600; color: #1e293b; }
 
           .form-label-modern { font-weight: 600; color: #475569; margin-bottom: 8px; font-size: 0.9rem; }
           .form-control-modern {
@@ -264,8 +306,8 @@ const Payment = () => {
           <Row className="mb-4 g-4">
             <Col lg={3} md={6}><motion.div variants={itemVariants}><div className="stat-card"><div className="stat-icon-wrapper"><FontAwesomeIcon icon={faFileAlt} className="stat-icon" /></div><div className="stat-number">{totalCount}</div><div className="stat-label">Total Records</div></div></motion.div></Col>
             <Col lg={3} md={6}><motion.div variants={itemVariants}><div className="stat-card"><div className="stat-icon-wrapper"><FontAwesomeIcon icon={faClock} className="stat-icon" /></div><div className="stat-number">{pendingCount}</div><div className="stat-label">Pending Payments</div></div></motion.div></Col>
-            <Col lg={3} md={6}><motion.div variants={itemVariants}><div className="stat-card"><div className="stat-icon-wrapper"><FontAwesomeIcon icon={faMoneyCheckAlt} className="stat-icon" /></div><div className="stat-number">{formatCurrency(totalPaid)}</div><div className="stat-label">Paid Amount</div></div></motion.div></Col>
-            <Col lg={3} md={6}><motion.div variants={itemVariants}><div className="stat-card"><div className="stat-icon-wrapper"><FontAwesomeIcon icon={faMoneyBillWave} className="stat-icon" /></div><div className="stat-number">{formatCurrency(totalPending)}</div><div className="stat-label">Pending Amount</div></div></motion.div></Col>
+            <Col lg={3} md={6}><motion.div variants={itemVariants}><div className="stat-card"><div className="stat-icon-wrapper"><FontAwesomeIcon icon={faMoneyCheckAlt} className="stat-icon" /></div><div className="stat-number">{formatCurrency(totalOverallReceived)}</div><div className="stat-label">Total Collected</div></div></motion.div></Col>
+            <Col lg={3} md={6}><motion.div variants={itemVariants}><div className="stat-card"><div className="stat-icon-wrapper"><FontAwesomeIcon icon={faMoneyBillWave} className="stat-icon" /></div><div className="stat-number">{formatCurrency(totalOverallPending)}</div><div className="stat-label">Pending Amount</div></div></motion.div></Col>
           </Row>
 
           {/* Filter Controls */}
@@ -321,9 +363,10 @@ const Payment = () => {
                       <th onClick={() => handleSort('recordNo')}>Record {sortConfig.key === 'recordNo' && <motion.span initial={{scale:0}} animate={{scale:1}} className="sort-icon"><FontAwesomeIcon icon={sortConfig.direction === 'asc'?faArrowUp:faArrowDown}/></motion.span>}</th>
                       <th>Customer</th>
                       <th>Vendor</th>
-                      <th onClick={() => handleSort('received')}>Received {sortConfig.key === 'received' && <motion.span initial={{scale:0}} animate={{scale:1}} className="sort-icon"><FontAwesomeIcon icon={sortConfig.direction === 'asc'?faArrowUp:faArrowDown}/></motion.span>}</th>
-                      <th onClick={() => handleSort('balance')}>Remaining {sortConfig.key === 'balance' && <motion.span initial={{scale:0}} animate={{scale:1}} className="sort-icon"><FontAwesomeIcon icon={sortConfig.direction === 'asc'?faArrowUp:faArrowDown}/></motion.span>}</th>
-                      <th onClick={() => handleSort('status')}>Status {sortConfig.key === 'status' && <motion.span initial={{scale:0}} animate={{scale:1}} className="sort-icon"><FontAwesomeIcon icon={sortConfig.direction === 'asc'?faArrowUp:faArrowDown}/></motion.span>}</th>
+                      <th onClick={() => handleSort('pAmount')}>Paid Amt {sortConfig.key === 'pAmount' && <motion.span initial={{scale:0}} animate={{scale:1}} className="sort-icon"><FontAwesomeIcon icon={sortConfig.direction === 'asc'?faArrowUp:faArrowDown}/></motion.span>}</th>
+                      <th onClick={() => handleSort('docBalance')}>Balance {sortConfig.key === 'docBalance' && <motion.span initial={{scale:0}} animate={{scale:1}} className="sort-icon"><FontAwesomeIcon icon={sortConfig.direction === 'asc'?faArrowUp:faArrowDown}/></motion.span>}</th>
+                      <th>Note</th>
+                      <th onClick={() => handleSort('status')}>Doc Status {sortConfig.key === 'status' && <motion.span initial={{scale:0}} animate={{scale:1}} className="sort-icon"><FontAwesomeIcon icon={sortConfig.direction === 'asc'?faArrowUp:faArrowDown}/></motion.span>}</th>
                       <th className="text-center">Action</th>
                     </tr>
                   </thead>
@@ -336,8 +379,9 @@ const Payment = () => {
                           <td style={{fontWeight: 700}}>{item.recordNo}</td>
                           <td>{item.customerName}</td>
                           <td style={{color:'var(--text-secondary)'}}>{item.vendor}</td>
-                          <td style={{fontWeight: 800, color:'#10b981'}}>₹{item.received.toLocaleString()}</td>
-                          <td style={{fontWeight: 800, color:'#ef4444'}}>₹{item.balance.toLocaleString()}</td>
+                          <td style={{fontWeight: 800, color:'#10b981'}}>₹{item.pAmount.toLocaleString()} <small className="text-muted d-block" style={{fontSize:'0.7rem'}}>{item.time}</small></td>
+                          <td style={{fontWeight: 700, color: item.docBalance > 0 ? '#f59e0b' : '#10b981'}}>₹{item.docBalance.toLocaleString()}</td>
+                          <td className="text-muted" style={{fontSize: '0.85rem'}}>{item.note}</td>
                           <td>{getStatusBadge(item.status)}</td>
                           <td className="text-center">
                             <button className="circle-btn view" onClick={(e) => { e.stopPropagation(); handleView(item); }} title="View Details">
@@ -360,42 +404,61 @@ const Payment = () => {
             <Modal show={showViewModal} onHide={() => setShowViewModal(false)} centered size="xl" className="details-modal">
               <motion.div variants={modalVariants} initial="hidden" animate="visible" exit="exit">
                 <Modal.Header closeButton>
-                  <Modal.Title><FontAwesomeIcon icon={faEye} className="me-2 text-warning"/> View Payment Details: {currentPayment.recordNo}</Modal.Title>
+                  <Modal.Title><FontAwesomeIcon icon={faMoneyBillWave} className="me-2 text-warning"/> Payment Receipt: {currentPayment.recordNo}</Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
-                  <div className="text-center mb-4">{getStatusBadge(currentPayment.status)}</div>
+                  <div className="receipt-banner">
+                    <div className="receipt-label">Current Payment Received</div>
+                    <div className="receipt-amount-big">₹{currentPayment.pAmount.toLocaleString()}</div>
+                    <div className="mt-2">{getStatusBadge(currentPayment.status)}</div>
+                    <div className="mt-3 text-white-50" style={{fontSize: '0.85rem'}}>Transaction ID: {currentPayment.id}</div>
+                  </div>
+
+                  <div className="receipt-summary-row">
+                    <div className="summary-item">
+                      <div className="summary-label">Total Record Cost</div>
+                      <div className="summary-val">{formatCurrency(currentPayment.fullAmount)}</div>
+                    </div>
+                    <div className="summary-item">
+                      <div className="summary-label">Total Collected (To Date)</div>
+                      <div className="summary-val text-success">{formatCurrency(currentPayment.docReceived)}</div>
+                    </div>
+                    <div className="summary-item">
+                      <div className="summary-label">Outstanding Balance</div>
+                      <div className="summary-val text-warning">{formatCurrency(currentPayment.docBalance)}</div>
+                    </div>
+                  </div>
                   
-                  <Row className="g-3">
-                    <h5 className="mb-2 fw-bold w-100" style={{color: '#475569'}}><FontAwesomeIcon icon={faFileAlt} className="me-2"/> General Info</h5>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">Date</Form.Label><Form.Control type="text" className="form-control-modern" value={new Date(currentPayment.date).toLocaleDateString('en-GB')} disabled /></Form.Group></Col>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">Record Type</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.recordType} disabled /></Form.Group></Col>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">Record No</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.recordNo} disabled /></Form.Group></Col>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">Reference</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.reference} disabled /></Form.Group></Col>
+                  <div className="info-grid">
+                    <div style={{gridColumn: '1 / -1'}}>
+                      <h6 className="receipt-section-title"><FontAwesomeIcon icon={faFileAlt}/> General Information</h6>
+                      <div className="d-flex flex-wrap gap-3">
+                        <div className="info-block" style={{flex: 1}}><div className="info-lbl">Date & Time</div><div className="info-val">{new Date(currentPayment.date).toLocaleDateString('en-GB')} | {currentPayment.time}</div></div>
+                        <div className="info-block" style={{flex: 1}}><div className="info-lbl">Type</div><div className="info-val">{currentPayment.recordType}</div></div>
+                        <div className="info-block" style={{flex: 1}}><div className="info-lbl">Record Number</div><div className="info-val">{currentPayment.recordNo}</div></div>
+                        <div className="info-block" style={{flex: 1}}><div className="info-lbl">Reference</div><div className="info-val">{currentPayment.reference}</div></div>
+                      </div>
+                    </div>
 
-                    <h5 className="mt-4 mb-2 fw-bold w-100" style={{color: '#475569'}}><FontAwesomeIcon icon={faUser} className="me-2"/> Participants & Location</h5>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">Customer Name</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.customerName} disabled /></Form.Group></Col>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">Vendor Name</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.vendor} disabled /></Form.Group></Col>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">Office</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.office} disabled /></Form.Group></Col>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">Nagar</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.nagar} disabled /></Form.Group></Col>
+                    <div style={{gridColumn: '1 / -1'}} className="mt-2">
+                      <h6 className="receipt-section-title"><FontAwesomeIcon icon={faUser}/> Participants & Location</h6>
+                      <div className="d-flex flex-wrap gap-3">
+                        <div className="info-block" style={{flex: 1.5}}><div className="info-lbl">Customer</div><div className="info-val">{currentPayment.customerName}</div></div>
+                        <div className="info-block" style={{flex: 1.5}}><div className="info-lbl">Vendor</div><div className="info-val">{currentPayment.vendor}</div></div>
+                        <div className="info-block" style={{flex: 1}}><div className="info-lbl">Office</div><div className="info-val">{currentPayment.office}</div></div>
+                        <div className="info-block" style={{flex: 1}}><div className="info-lbl">Local Area (Nagar)</div><div className="info-val">{currentPayment.nagar}</div></div>
+                      </div>
+                    </div>
 
-                    <h5 className="mt-4 mb-2 fw-bold w-100" style={{color: '#475569'}}><FontAwesomeIcon icon={faMapMarkerAlt} className="me-2"/> Property & Legal Details</h5>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">TP No</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.tpNo} disabled /></Form.Group></Col>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">Plot No</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.plotNo} disabled /></Form.Group></Col>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">Deed Type</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.deed} disabled /></Form.Group></Col>
-                    <Col md={3}><Form.Group><Form.Label className="form-label-modern">Document No</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.docNo} disabled /></Form.Group></Col>
-
-                    <Col md={3} className="mt-4"><Form.Group><Form.Label className="form-label-modern">Field Visit</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.fieldVisit} disabled /></Form.Group></Col>
-                    <Col md={3} className="mt-4"><Form.Group><Form.Label className="form-label-modern">Return Document</Form.Label><Form.Control type="text" className="form-control-modern" value={currentPayment.returnDocument} disabled /></Form.Group></Col>
-
-                    <h5 className="mt-5 mb-3 fw-bold w-100" style={{color: '#475569'}}><FontAwesomeIcon icon={faWallet} className="me-2"/> Invoice Breakdown</h5>
-                    <Col md={4}><Form.Group><Form.Label className="form-label-modern">Base Amount (₹)</Form.Label><Form.Control type="text" className="form-control-modern" value={formatCurrency(currentPayment.amount)} disabled /></Form.Group></Col>
-                    <Col md={4}><Form.Group><Form.Label className="form-label-modern">Commission (₹)</Form.Label><Form.Control type="text" className="form-control-modern" value={formatCurrency(currentPayment.commission)} disabled /></Form.Group></Col>
-                    <Col md={4}><Form.Group><Form.Label className="form-label-modern">Others (₹)</Form.Label><Form.Control type="text" className="form-control-modern" value={formatCurrency(currentPayment.others)} disabled /></Form.Group></Col>
-                  </Row>
-                  
-                  <Row className="mt-4">
-                    <Col md={12}><Alert className="total-alert border-0 p-4"><span style={{fontSize: '1rem', display: 'block', color:'#b45309'}}>Grand Total Amount</span> <span style={{fontSize: '1.8rem', fontWeight: 800}}>₹{currentPayment.total.toLocaleString()}</span></Alert></Col>
-                  </Row>
+                    <div style={{gridColumn: '1 / -1'}} className="mt-2">
+                      <h6 className="receipt-section-title"><FontAwesomeIcon icon={faMapMarkerAlt}/> Property Details & Payment Audit</h6>
+                      <div className="d-flex flex-wrap gap-3">
+                        <div className="info-block" style={{flex: 1}}><div className="info-lbl">Deed Type</div><div className="info-val">{currentPayment.deed}</div></div>
+                        <div className="info-block" style={{flex: 1}}><div className="info-lbl">Plot/TP No</div><div className="info-val">{currentPayment.plotNo} / {currentPayment.tpNo}</div></div>
+                        <div className="info-block" style={{flex: 2}}><div className="info-lbl">Payment Note / Description</div><div className="info-val text-muted italic">{currentPayment.note}</div></div>
+                      </div>
+                    </div>
+                  </div>
                   
                 </Modal.Body>
                 <Modal.Footer className="border-0 px-4 pb-4">

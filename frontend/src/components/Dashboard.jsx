@@ -18,6 +18,7 @@ import {
   faArrowRight,
   faExclamationTriangle,
   faTasks,
+  faMoneyBillWave,
   faBell
 } from "@fortawesome/free-solid-svg-icons";
 import { motion, AnimatePresence } from "framer-motion";
@@ -44,6 +45,19 @@ const Dashboard = () => {
     { label: "Nagal/Adangal", value: 0, color: "#6366f1" }
   ]);
 
+  // Insights State
+  const [allDocs, setAllDocs] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [insightsData, setInsightsData] = useState({
+    ec: 0, nagal: 0, agreement: 0, deed: 0,
+    total: 0,
+    topCollectors: []
+  });
+
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const shortMonthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
@@ -53,26 +67,48 @@ const Dashboard = () => {
         ]);
         const clients = await clientsRes.json();
         const docs = await docsRes.json();
+        setAllDocs(docs);
         
         const now = new Date();
         const currentMonthIdx = now.getMonth();
         const currentYear = now.getFullYear();
-        const todayStr = now.toISOString().split('T')[0];
 
         let todaySum = 0;
         let monthSum = 0;
         let pendingSum = 0;
 
         docs.forEach(d => {
-          pendingSum += (d.totalFee || 0) - (d.received || 0);
-          if (d.date) {
-            const docDateStr = d.date.split('T')[0];
-            const dDateObj = new Date(d.date);
-            if (docDateStr === todayStr) {
-               todaySum += (d.received || 0);
+          pendingSum += (Number(d.totalFee) || 0) - (Number(d.received) || 0);
+          
+          const docDateObj = new Date(d.date);
+          const isDocToday = docDateObj.getDate() === now.getDate() && 
+                             docDateObj.getMonth() === now.getMonth() && 
+                             docDateObj.getFullYear() === now.getFullYear();
+
+          const isDocThisMonth = docDateObj.getMonth() === currentMonthIdx && docDateObj.getFullYear() === currentYear;
+
+          // 1. Process Individual Payments
+          if (d.payments && d.payments.length > 0) {
+            d.payments.forEach(p => {
+              const pDate = new Date(p.date || d.date);
+              const isPDateToday = pDate.getDate() === now.getDate() && 
+                                   pDate.getMonth() === now.getMonth() && 
+                                   pDate.getFullYear() === now.getFullYear();
+              
+              if (isPDateToday) {
+                todaySum += Number(p.amount || 0);
+              }
+              if (pDate.getMonth() === currentMonthIdx && pDate.getFullYear() === currentYear) {
+                monthSum += Number(p.amount || 0);
+              }
+            });
+          } else {
+            // 2. Fallback for docs without individual payment items (Legacy/Direct)
+            if (isDocToday) {
+              todaySum += Number(d.received || 0);
             }
-            if (dDateObj.getMonth() === currentMonthIdx && dDateObj.getFullYear() === currentYear) {
-               monthSum += (d.received || 0);
+            if (isDocThisMonth) {
+              monthSum += Number(d.received || 0);
             }
           }
         });
@@ -97,14 +133,14 @@ const Dashboard = () => {
            };
         };
 
-        const allActions = sortedDocs.slice(0, 10).map(d => mapDocToAction(d, false));
-        const paymentActions = sortedDocs.filter(d => d.received > 0).slice(0, 10).map(d => mapDocToAction(d, true));
-        const docActions = sortedDocs.slice(0, 10).map(d => mapDocToAction(d, false)); // We can reuse general updates
+        const allActions = sortedDocs.slice(0, 15).map(d => mapDocToAction(d, false));
+        const paymentActions = sortedDocs.filter(d => d.received > 0).slice(0, 15).map(d => mapDocToAction(d, true));
+        const docActions = sortedDocs.slice(0, 15).map(d => mapDocToAction(d, false));
 
         setRecentActionsData({ all: allActions, payments: paymentActions, documents: docActions });
 
         // Computing Pending Tasks
-        const pendingArray = sortedDocs.filter(d => d.status === 'Pending').slice(0, 6).map((d, i) => ({
+        const pendingArray = sortedDocs.filter(d => d.status === 'Pending').slice(0, 10).map((d, i) => ({
           id: d._id || i,
           doc: d.recordNo || d.documentType,
           desc: `Client: ${d.customerName || d.vendor || 'Unknown'}`,
@@ -125,26 +161,30 @@ const Dashboard = () => {
           { label: "Nagal/Adangal", value: Math.round(((typeCounts['Nagal'] || 0) / totalDocs) * 100) || 0, color: "#6366f1" }
         ]);
 
-        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const monthlyRev = {};
         docs.forEach(d => {
            if (d.date) {
-             const m = new Date(d.date).getMonth();
-             monthlyRev[m] = (monthlyRev[m] || 0) + (d.received || 0);
+             const dDate = new Date(d.date);
+             const key = `${dDate.getFullYear()}-${dDate.getMonth()}`;
+             monthlyRev[key] = (monthlyRev[key] || 0) + (d.received || 0);
            }
         });
         
         const revData = [];
-        const currentMonth = new Date().getMonth();
-        for (let i = 5; i >= 0; i--) {
-           let m = currentMonth - i;
-           if (m < 0) m += 12;
-           const val = monthlyRev[m] || 0;
-           // Display logic relative to Max, or simple division
-           const displayVal = val >= 1000 ? (val / 1000).toFixed(1) + 'K' : val;
+        const currentM = new Date().getMonth();
+        const currentY = new Date().getFullYear();
+        for (let i = 11; i >= 0; i--) {
+           let targetMonth = currentM - i;
+           let targetYear = currentY;
+           if (targetMonth < 0) {
+             targetMonth += 12;
+             targetYear -= 1;
+           }
+           const key = `${targetYear}-${targetMonth}`;
+           const val = monthlyRev[key] || 0;
            revData.push({
-             month: monthNames[m],
-             rev: val > 0 ? Math.max((val / 100000) * 10, 5) : 2, // arbitrary scaling for chart height
+             month: shortMonthNames[targetMonth],
+             rev: val > 0 ? Math.max((val / 100000) * 10, 5) : 2,
              label: `₹${val.toLocaleString()}`
            });
         }
@@ -156,6 +196,58 @@ const Dashboard = () => {
     };
     fetchDashboardData();
   }, []);
+
+  // Recalculate Insights when filter or docs change
+  useEffect(() => {
+    if (allDocs.length === 0) return;
+
+    const filteredDocs = allDocs.filter(d => {
+      const dDate = new Date(d.date);
+      return dDate.getMonth() === selectedMonth && dDate.getFullYear() === selectedYear;
+    });
+
+    const breakdown = { EC: 0, Nagal: 0, Agreement: 0, Deed: 0 };
+    const collectorsMap = {};
+
+    filteredDocs.forEach(d => {
+      const type = d.documentType;
+      const amt = Number(d.received || 0);
+      if (breakdown.hasOwnProperty(type)) {
+        breakdown[type] += amt;
+      }
+
+      if (amt > 0) {
+        let key, name, category;
+        if (d.vendor) {
+          key = `v_${d.vendor}`;
+          name = d.vendor;
+          category = 'Vendor';
+        } else {
+          const cName = d.customerName || "Direct Client";
+          key = `c_${cName}`;
+          name = cName;
+          category = 'Customer';
+        }
+
+        if (!collectorsMap[key]) {
+          collectorsMap[key] = { name, category, amount: 0 };
+        }
+        collectorsMap[key].amount += amt;
+      }
+    });
+
+    const allCollectors = Object.values(collectorsMap)
+      .sort((a, b) => b.amount - a.amount);
+
+    setInsightsData({
+      ec: breakdown.EC,
+      nagal: breakdown.Nagal,
+      agreement: breakdown.Agreement,
+      deed: breakdown.Deed,
+      total: breakdown.EC + breakdown.Nagal + breakdown.Agreement + breakdown.Deed,
+      topCollectors: allCollectors
+    });
+  }, [allDocs, selectedMonth, selectedYear]);
 
   const getThemeVars = () => {
     return `
@@ -202,7 +294,6 @@ const Dashboard = () => {
           overflow-x: hidden;
         }
 
-        /* Ambient floating shapes */
         .ambient-shape {
           position: fixed;
           border-radius: 50%;
@@ -231,9 +322,6 @@ const Dashboard = () => {
 
         .glass-card:hover { transform: translateY(-4px); box-shadow: 0 20px 50px rgba(0,0,0,0.12); }
 
-        .overview-card { padding: 32px; }
-        .overview-card::before { content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 6px; background: var(--highlight-grad); }
-
         .stat-card {
           background: linear-gradient(145deg, #0f172a, #1e293b);
           border-radius: 20px; padding: 24px 20px; textAlign: left; position: relative; overflow: hidden;
@@ -255,29 +343,26 @@ const Dashboard = () => {
         .card-header-styled h4 { margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-primary); }
         .card-header-styled small { color: var(--text-secondary); font-weight: 500; font-size: 0.85rem;}
 
-        /* Custom Bar Chart CSS */
-        .bar-chart-container { display: flex; align-items: flex-end; justify-content: space-between; height: 260px; padding: 30px; gap: 12px; }
+        .bar-chart-container { display: flex; align-items: flex-end; justify-content: space-between; height: 260px; padding: 30px; gap: 8px; }
         .bar-wrapper { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 12px; position: relative; height: 100%; justify-content: flex-end; }
-        .bar-track { width: 100%; max-width: 40px; height: 100%; background: var(--bg-input); border-radius: 12px; position: relative; overflow: hidden; }
-        .bar-fill { position: absolute; bottom: 0; left: 0; width: 100%; background: var(--highlight-grad); border-radius: 12px; transition: filter 0.3s; cursor: pointer;}
+        .bar-track { width: 100%; max-width: 25px; height: 100%; background: var(--bg-input); border-radius: 10px; position: relative; overflow: hidden; }
+        .bar-fill { position: absolute; bottom: 0; left: 0; width: 100%; background: var(--highlight-grad); border-radius: 10px; transition: filter 0.3s; cursor: pointer;}
         .bar-fill:hover { filter: brightness(1.15); }
-        .bar-label { font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; }
-        .bar-tooltip { position: absolute; top: -35px; background: #0f172a; color: white; padding: 6px 12px; border-radius: 6px; font-size: 0.9rem; font-weight: 700; opacity: 0; transform: translateY(10px); transition: 0.2s ease; pointer-events: none; z-index: 100; white-space: nowrap;}
+        .bar-label { font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; }
+        .bar-tooltip { position: absolute; top: -35px; background: #0f172a; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; opacity: 0; transform: translateY(10px); transition: 0.2s ease; pointer-events: none; z-index: 100; white-space: nowrap;}
         .bar-wrapper:hover .bar-tooltip { opacity: 1; transform: translateY(0); }
 
-        /* Distribution Bars */
         .dist-item { margin-bottom: 20px; }
         .dist-item-header { display: flex; justify-content: space-between; font-size: 0.9rem; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
         .dist-track { height: 10px; background: var(--bg-input); border-radius: 999px; overflow: hidden; }
         .dist-fill { height: 100%; border-radius: 999px; }
 
-        /* Activity List */
         .activity-nav { display: flex; gap: 10px; margin-bottom: 20px; padding: 0 24px;}
         .activity-tab { padding: 6px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); background: transparent; border: 1px solid var(--border-glass); cursor: pointer; transition: 0.3s; }
         .activity-tab.active { background: #0f172a; color: white; border-color: #0f172a; }
         .activity-tab:hover:not(.active) { background: var(--bg-input); }
 
-        .activity-list { padding: 0 24px 24px; max-height: 380px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--highlight) transparent; }
+        .activity-list { padding: 0 24px 24px; height: 320px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--highlight) transparent; }
         .activity-item { display: flex; align-items: flex-start; gap: 16px; padding: 18px 0; border-bottom: 1px dashed var(--border-glass); transition: 0.2s ease; }
         .activity-item:hover { transform: translateX(4px); background: rgba(0,0,0,0.01); border-radius: 12px; padding: 18px 12px; margin: 0 -12px; border-bottom-color: transparent;}
         .activity-item:last-child { border-bottom: none; }
@@ -291,16 +376,43 @@ const Dashboard = () => {
         .activity-title { font-weight: 600; color: var(--text-primary); margin-bottom: 4px; font-size: 0.95rem; line-height: 1.4; }
         .activity-time { color: var(--text-secondary); font-size: 0.8rem; font-weight: 500; display: flex; align-items: center; gap: 6px; }
 
-        /* Tasks List */
+        .task-list-container { height: 320px; overflow-y: auto; padding: 0 24px 24px; scrollbar-width: thin; scrollbar-color: var(--highlight) transparent;}
         .task-item { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; margin-bottom: 12px; border-radius: 14px; border: 1px solid var(--border-glass); background: #ffffff; transition: 0.2s ease; cursor: pointer; }
         .task-item:hover { border-color: var(--highlight); box-shadow: 0 4px 15px rgba(217,119,6,0.1); transform: translateY(-2px); }
+
+        /* Insight Section Styles */
+        .insight-card { padding: 30px; }
+        .insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        .insight-box { background: var(--bg-input); padding: 20px; border-radius: 18px; border: 1px solid var(--border-glass); transition: 0.3s; }
+        .insight-box:hover { background: white; border-color: #d97706; box-shadow: 0 10px 25px rgba(217,119,6,0.08); }
+        .insight-box-label { font-size: 0.8rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px; }
+        .insight-box-value { font-family: 'Playfair Display', serif; font-size: 1.5rem; font-weight: 700; color: #0f172a; }
         
+        .leaderboard-item { display: flex; align-items: center; gap: 15px; padding: 15px; background: white; border-radius: 15px; margin-bottom: 12px; border: 1px solid var(--border-glass); position: relative; overflow: hidden;}
+        .leaderboard-rank { width: 35px; height: 35px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 0.9rem; flex-shrink: 0; }
+        .rank-1 { background: #fef3c7; color: #d97706; border: 2px solid #fbbf24; }
+        .rank-2 { background: #f1f5f9; color: #64748b; border: 2px solid #cbd5e1; }
+        .rank-3 { background: #fff7ed; color: #c2410c; border: 2px solid #fdba74; }
+        .rank-default { background: #f8fafc; color: #94a3b8; border: 1px solid #e2e8f0; }
+
+        .leaderboard-container {
+           max-height: 380px; 
+           overflow-y: auto; 
+           padding-right: 10px;
+           scrollbar-width: thin; 
+           scrollbar-color: #d97706 transparent;
+        }
+        
+        .custom-select {
+          padding: 8px 16px; border-radius: 10px; border: 1px solid var(--border-glass); background: white; font-weight: 600; font-size: 0.9rem; color: #0f172a; outline: none; transition: 0.3s;
+        }
+        .custom-select:focus { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,0.1); }
+
         @media (max-width: 991px) {
           .dashboard-shell { margin-left: 0; padding: 20px; }
         }
       `}</style>
       
-      {/* Background Ambience */}
       <div className="ambient-shape shape-1"></div>
       <div className="ambient-shape shape-2"></div>
 
@@ -311,16 +423,15 @@ const Dashboard = () => {
             <p style={{color:'var(--text-secondary)', fontSize: '1.05rem'}} className="mb-0">Unified law operations, billing analytics, and performance tracking.</p>
           </div>
           <div className="d-flex gap-3">
-            <Button variant="light" style={{borderRadius: '12px', padding: '12px 20px', fontWeight: 600, border: '1px solid var(--border-glass)', background: 'white', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 10px rgba(0,0,0,0.05)'}}>
+            {/* <Button variant="light" style={{borderRadius: '12px', padding: '12px 20px', fontWeight: 600, border: '1px solid var(--border-glass)', background: 'white', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 10px rgba(0,0,0,0.05)'}}>
               <FontAwesomeIcon icon={faBell} style={{color: '#d97706'}} /> Notifications <Badge bg="danger" style={{borderRadius: '50%'}}>3</Badge>
-            </Button>
+            </Button> */}
             <Button style={{background: 'var(--highlight-grad)', borderRadius: '12px', padding: '12px 24px', fontWeight: 600, border: 'none', boxShadow: '0 8px 20px rgba(217,119,6,0.2)'}}>
-              <FontAwesomeIcon icon={faMoneyCheckAlt} className="me-2" /> Generate Invoices
+              <FontAwesomeIcon icon={faCalendarAlt} className="me-2" /> {new Date().toLocaleDateString('en-GB')}
             </Button>
           </div>
         </div>
 
-        {/* Global Stats Array */}
         <Row className="g-4 mb-5 mt-2">
           {dashboardSummary.map((metric) => (
             <Col xl={4} lg={4} md={12} key={metric.title}>
@@ -342,7 +453,6 @@ const Dashboard = () => {
           ))}
         </Row>
 
-        {/* Advanced Charts Section */}
         <Row className="g-4 mb-5">
           <Col xl={8} lg={12}>
             <motion.div variants={itemVariants} className="h-100">
@@ -350,11 +460,10 @@ const Dashboard = () => {
                 <div className="card-header-styled">
                   <div>
                     <h4>Revenue Intake Trend</h4>
-                    <small>Monthly payment realizations across all module types.</small>
+                    <small>Monthly payment realizations (Last 1 Year)</small>
                   </div>
-                  <Badge bg="light" text="dark" style={{fontWeight: 700, padding: "8px 12px", border: "1px solid var(--border-glass)", borderRadius: "10px"}}>Last 6 Months</Badge>
+                  <Badge bg="light" text="dark" style={{fontWeight: 700, padding: "8px 12px", border: "1px solid var(--border-glass)", borderRadius: "10px"}}>12 Months Trend</Badge>
                 </div>
-                {/* Custom Framer Motion Bar Chart */}
                 <div className="bar-chart-container">
                   {revenueData.map((data, index) => (
                     <div className="bar-wrapper" key={index}>
@@ -412,7 +521,6 @@ const Dashboard = () => {
           </Col>
         </Row>
 
-        {/* Action Log and Tasks */}
         <Row className="g-4 mb-5">
           <Col xl={7} lg={12}>
             <motion.div variants={itemVariants} className="h-100">
@@ -420,7 +528,7 @@ const Dashboard = () => {
                  <div className="card-header-styled" style={{borderBottom: 'none'}}>
                   <div>
                     <h4 style={{ margin: 0, fontWeight: 700, color: '#0f172a' }}>Live Action Log</h4>
-                    <small style={{ color: '#64748b', fontWeight: 500 }}>Real-time updates from your team</small>
+                    <small style={{ color: '#64748b', fontWeight: 500 }}>Recent updates and activities</small>
                   </div>
                   <FontAwesomeIcon icon={faClock} style={{color: '#94a3b8'}} />
                 </div>
@@ -473,12 +581,12 @@ const Dashboard = () => {
                  <div className="card-header-styled">
                   <div>
                     <h4 style={{ margin: 0, fontWeight: 700, color: '#0f172a' }}>Pending Actions</h4>
-                    <small style={{ color: '#64748b', fontWeight: 500 }}>Tasks requiring administrator approval</small>
+                    <small style={{ color: '#64748b', fontWeight: 500 }}>Tasks requiring attention</small>
                   </div>
                   <div style={{background: '#fee2e2', color: '#dc2626', padding: '8px', borderRadius: '10px'}}><FontAwesomeIcon icon={faTasks} /></div>
                 </div>
                 
-                <div style={{padding: '24px'}}>
+                <div className="task-list-container">
                   {pendingTasksState.length === 0 ? (
                     <div className="text-center py-5 text-muted border rounded-4 bg-light" style={{borderStyle:'dashed'}}>No pending tasks! Current workflow is clear.</div>
                   ) : (
@@ -504,11 +612,135 @@ const Dashboard = () => {
                       </motion.div>
                     ))
                   )}
-                  <Button variant="outline-primary" style={{width: '100%', marginTop: '10px', borderRadius: '12px', fontWeight: 600, color: '#0f172a', borderColor: 'var(--border-glass)'}}>
-                    View All Tasks →
-                  </Button>
+                  {pendingTasksState.length > 0 && (
+                    <Button variant="outline-primary" style={{width: '100%', marginTop: '10px', borderRadius: '12px', fontWeight: 600, color: '#0f172a', borderColor: 'var(--border-glass)'}}>
+                      View All Tasks →
+                    </Button>
+                  )}
                 </div>
 
+              </div>
+            </motion.div>
+          </Col>
+        </Row>
+
+        {/* Insights Section */}
+        <Row className="g-4 mb-5">
+          <Col xs={12}>
+            <motion.div variants={itemVariants}>
+              <div className="glass-card insight-card">
+                <div className="d-flex justify-content-between align-items-center mb-0 flex-wrap gap-3">
+                  <div>
+                    <h4 style={{fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: '1.8rem', color: '#d97706', margin: 0}}>Monthly Insights</h4>
+                    <p className="text-muted mb-0">Deep dive into collection data and top performers.</p>
+                  </div>
+                  <div className="d-flex gap-2">
+                    <select 
+                      className="custom-select" 
+                      value={selectedMonth} 
+                      onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                    >
+                      {monthNames.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                    </select>
+                    <select 
+                      className="custom-select" 
+                      value={selectedYear} 
+                      onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                    >
+                      {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Total Highlight */}
+                <div style={{margin: '30px 0', padding: '25px', background: 'linear-gradient(135deg, #fffbeb, #fef3c7)', borderRadius: '20px', border: '1px solid #fde68a', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                    <div>
+                        <div style={{fontSize: '0.85rem', fontWeight: 600, color: '#92400e', textTransform: 'uppercase', letterSpacing: '1px'}}>Total Month Collection</div>
+                        <div style={{fontSize: '2.4rem', fontWeight: 800, color: '#d97706', fontFamily: "'Playfair Display', serif"}}>₹{insightsData.total.toLocaleString()}</div>
+                    </div>
+                    <div style={{width: '60px', height: '60px', background: '#fbbf24', borderRadius: '50%', display: 'grid', placeItems: 'center', color: 'white', fontSize: '1.5rem', boxShadow: '0 8px 15px rgba(217,119,6,0.2)'}}>
+                        <FontAwesomeIcon icon={faWallet} />
+                    </div>
+                </div>
+
+                <Row className="g-4">
+                  <Col lg={7}>
+                    <div className="insight-grid">
+                      <div className="insight-box">
+                        <div className="d-flex align-items-center gap-3 mb-3">
+                            <div style={{width: '35px', height: '35px', borderRadius: '10px', background: '#ecfdf5', color: '#10b981', display: 'grid', placeItems: 'center'}}><FontAwesomeIcon icon={faFileAlt} /></div>
+                            <div className="insight-box-label" style={{margin: 0}}>EC Records</div>
+                        </div>
+                        <div className="insight-box-value">₹{insightsData.ec.toLocaleString()}</div>
+                      </div>
+                      <div className="insight-box">
+                        <div className="d-flex align-items-center gap-3 mb-3">
+                            <div style={{width: '35px', height: '35px', borderRadius: '10px', background: '#eef2ff', color: '#6366f1', display: 'grid', placeItems: 'center'}}><FontAwesomeIcon icon={faCheckCircle} /></div>
+                            <div className="insight-box-label" style={{margin: 0}}>Nagal/Adangal</div>
+                        </div>
+                        <div className="insight-box-value">₹{insightsData.nagal.toLocaleString()}</div>
+                      </div>
+                      <div className="insight-box">
+                        <div className="d-flex align-items-center gap-3 mb-3">
+                            <div style={{width: '35px', height: '35px', borderRadius: '10px', background: '#f0f9ff', color: '#0ea5e9', display: 'grid', placeItems: 'center'}}><FontAwesomeIcon icon={faMoneyBillWave} /></div>
+                            <div className="insight-box-label" style={{margin: 0}}>Agreements</div>
+                        </div>
+                        <div className="insight-box-value">₹{insightsData.agreement.toLocaleString()}</div>
+                      </div>
+                      <div className="insight-box">
+                        <div className="d-flex align-items-center gap-3 mb-3">
+                            <div style={{width: '35px', height: '35px', borderRadius: '10px', background: '#fffbeb', color: '#f59e0b', display: 'grid', placeItems: 'center'}}><FontAwesomeIcon icon={faClock} /></div>
+                            <div className="insight-box-label" style={{margin: 0}}>Sale Deeds</div>
+                        </div>
+                        <div className="insight-box-value">₹{insightsData.deed.toLocaleString()}</div>
+                      </div>
+                    </div>
+                  </Col>
+                  <Col lg={5}>
+                    <div style={{background: 'rgba(248, 250, 252, 0.5)', padding: '25px', borderRadius: '24px', border: '1px solid var(--border-glass)'}}>
+                      <div className="d-flex justify-content-between align-items-center mb-4">
+                        <h5 style={{margin: 0, fontWeight: 700, color: '#0f172a'}}>Vendor Collections</h5>
+                        <FontAwesomeIcon icon={faChartLine} style={{color: '#d1d5db'}} />
+                      </div>
+                      
+                      <div className="leaderboard-container">
+                        {insightsData.topCollectors.length === 0 ? (
+                          <div className="text-center py-4 text-muted">No data for this period.</div>
+                        ) : (
+                          insightsData.topCollectors.map((c, i) => (
+                            <motion.div 
+                              key={c.name}
+                              className="leaderboard-item"
+                              initial={{ opacity: 0, x: 20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: i * 0.1 }}
+                              whileHover={{ scale: 1.02, backgroundColor: '#fdfcfb' }}
+                            >
+                              <div className={`leaderboard-rank ${i < 3 ? `rank-${i+1}` : 'rank-default'}`}>{i + 1}</div>
+                              <div style={{flexGrow: 1}}>
+                                <div className="d-flex align-items-center gap-2">
+                                  <div style={{fontWeight: 700, color: '#0f172a', fontSize: '0.95rem'}}>{c.name}</div>
+                                  <Badge 
+                                    bg={c.category === 'Vendor' ? "warning" : "info"} 
+                                    style={{fontSize: '0.6rem', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase'}}
+                                  >
+                                    {c.category === 'Vendor' ? 'Vendor' : 'Customer'}
+                                  </Badge>
+                                </div>
+                                <div style={{color: '#64748b', fontSize: '0.75rem'}}>Collection Impact</div>
+                              </div>
+                              <div style={{textAlign: 'right'}}>
+                                <div style={{fontWeight: 800, color: '#d97706', fontSize: '0.95rem'}}>₹{c.amount.toLocaleString()}</div>
+                              </div>
+                              {/* Accent highlight for Rank 1 */}
+                              {i === 0 && <div style={{position: 'absolute', right: 0, top: 0, bottom: 0, width: 4, background: '#fbbf24'}}></div>}
+                            </motion.div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </Col>
+                </Row>
               </div>
             </motion.div>
           </Col>

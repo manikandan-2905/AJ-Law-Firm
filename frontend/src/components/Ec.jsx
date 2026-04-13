@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { Modal, Button, Form, Row, Col, Alert, Badge } from "react-bootstrap";
+import { Modal, Button, Form, Row, Col, Alert, Badge, Table } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faPlus, faEye, faEdit, faTrash, faSearch,
   faFileAlt, faCheckCircle, faClock, faCalendarCheck, faCreditCard,
   faMapMarkerAlt, faBuilding, faUser, faMoneyBillWave,
-  faTimes, faSortAmountDown, faBalanceScale, faWallet, faHandHoldingUsd
+  faTimes, faSortAmountDown, faBalanceScale, faWallet, faHandHoldingUsd, faHistory, faCalendarAlt, faPrint
 } from "@fortawesome/free-solid-svg-icons";
 import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "./Sidebar";
@@ -37,7 +37,7 @@ const Ec = () => {
   const [isEdit, setIsEdit] = useState(false);
   const [currentEC, setCurrentEC] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filters, setFilters] = useState({ vendor: "", status: "" });
+  const [filters, setFilters] = useState({ vendor: "", status: "", date: "" });
   const [sortOption, setSortOption] = useState("date-desc");
 
   const [clients, setClients] = useState([]);
@@ -101,6 +101,12 @@ const Ec = () => {
 
     if (filters.vendor) filtered = filtered.filter(d => d.vendor === filters.vendor);
     if (filters.status) filtered = filtered.filter(d => d.status === filters.status);
+    if (filters.date) {
+      filtered = filtered.filter(d => {
+        const dDate = new Date(d.date).toISOString().split('T')[0];
+        return dDate === filters.date;
+      });
+    }
 
     filtered.sort((a, b) => {
       const splitOption = sortOption.split("-");
@@ -116,12 +122,18 @@ const Ec = () => {
 
   const handleAddNew = () => {
     setIsEdit(false); setCurrentEC(null);
-    setFormData({ date: "", ecNo: "", vendor: "", customerName: "", client: "", office: "", nagar: "", surveyNo: "", amount: "", commission: "", others: "", totalFee: "", received: "", balance: "" });
+    setFormData({ date: "", ecNo: "", vendor: "", customerName: "", client: "", office: "", nagar: "", surveyNo: "", amount: "", commission: "", others: "", totalFee: "", received: "", balance: "", newPayment: "", paymentNote: "" });
     setShowModal(true);
   };
   const handleEdit = (ec, e) => {
     e.stopPropagation(); setIsEdit(true); setCurrentEC(ec);
-    setFormData({ date: ec.date, ecNo: ec.ecNo, vendor: ec.vendor, customerName: ec.customerName, client: ec.client?._id || ec.client || "", office: ec.office, nagar: ec.nagar, surveyNo: ec.surveyNo, amount: ec.amount.toString(), commission: ec.commission.toString(), others: ec.others.toString(), totalFee: ec.totalFee.toString(), received: ec.received.toString(), balance: ec.balance.toString() });
+    setFormData({ 
+      date: ec.date, ecNo: ec.ecNo, vendor: ec.vendor, customerName: ec.customerName, 
+      client: ec.client?._id || ec.client || "", office: ec.office, nagar: ec.nagar, surveyNo: ec.surveyNo, 
+      amount: ec.amount.toString(), commission: ec.commission.toString(), others: ec.others.toString(), 
+      totalFee: ec.totalFee.toString(), received: ec.received.toString(), balance: ec.balance.toString(),
+      newPayment: "", paymentNote: ""
+    });
     setShowModal(true);
   };
   const handleView = (ec) => { setCurrentEC(ec); setShowViewModal(true); };
@@ -140,39 +152,67 @@ const Ec = () => {
     const commission = parseFloat(formData.commission) || 0;
     const others = parseFloat(formData.others) || 0;
     const received = parseFloat(formData.received) || 0;
+    const newPayment = parseFloat(formData.newPayment) || 0;
     
+    // Core payload
     const payload = {
        ...formData,
        date: formData.date || new Date().toISOString(),
        documentType: 'EC',
        recordNo: formData.ecNo || `EC-${Date.now()}`,
-       amount, commission, others, received,
+       amount, commission, others,
        editFee: 0, stamp: 0
     };
+
+    if (isEdit) {
+      // In edit mode, we send newPayment to be appended
+      if (newPayment > 0) {
+        payload.newPayment = newPayment;
+        payload.paymentNote = formData.paymentNote || "Part Payment";
+      }
+      // received is read-only in Edit mode (calculated by backend from history)
+      delete payload.received; 
+    } else {
+      // In create mode, we send initial received
+      payload.received = received;
+    }
+
+    // Ensure client is just the ID if it was populated
+    if (payload.client && typeof payload.client === 'object') {
+       payload.client = payload.client._id;
+    }
     if (!payload.client) delete payload.client;
     
     try {
+        let res;
         if (isEdit) { 
-           await fetch(`/api/documents/${currentEC.id}`, {
+           res = await fetch(`/api/documents/${currentEC.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
            });
         } else { 
-           await fetch('/api/documents', {
+           res = await fetch('/api/documents', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
            });
         }
-        fetchData();
-        setShowModal(false);
+
+        if (res && res.ok) {
+           fetchData();
+           setShowModal(false);
+        } else {
+           const errData = await res.json();
+           alert(`Error: ${errData.message || 'Failed to save record'}`);
+        }
     } catch(err) {
         console.error(err);
+        alert('Network error - Please check your connection');
     }
   };
   const handleFilterChange = (field, value) => setFilters({ ...filters, [field]: value });
-  const clearFilters = () => { setFilters({ vendor: "", status: "" }); setSearchTerm(""); setSortOption("date-desc"); };
+  const clearFilters = () => { setFilters({ vendor: "", status: "", date: "" }); setSearchTerm(""); setSortOption("date-desc"); };
 
   const getStatusBadge = (status) => {
     const config = status === "Completed" ? { bg: "#10b981", icon: faCheckCircle } : { bg: "#f59e0b", icon: faClock };
@@ -266,6 +306,13 @@ const Ec = () => {
           .deed-info svg { color: var(--highlight); width: 16px;}
           
           .card-stats { background: rgba(0,0,0,0.02); border-radius: 16px; padding: 16px; margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; border: 1px solid var(--border-glass); margin-top: 20px;}
+          
+          @media print {
+            .sidebar, .page-header, .controls-bar, .actions-overlay, .btn-gold { display: none !important; }
+            .main-content { margin-left: 0 !important; padding: 0 !important; }
+            .glass-card { box-shadow: none !important; border: 1px solid #eee !important; }
+            .data-card { break-inside: avoid; border: 1px solid #ddd !important; }
+          }
           .stat-block .label { font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 700; letter-spacing: 0.5px; margin-bottom: 6px; }
           .stat-block .val { font-size: 1.15rem; font-weight: 700; color: var(--text-primary); }
           .stat-block .val.success { color: #10b981; }
@@ -291,6 +338,13 @@ const Ec = () => {
           .total-alert { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: none; border-radius: 16px; padding: 20px; font-weight: 700; color: #92400e; font-size: 1.2rem; text-align: center; }
           
           .modal-content, .modal-body { scrollbar-color: var(--highlight) transparent; scrollbar-width: thin; background: #ffffff !important; }
+
+          /* Payment History Small Table */
+          .history-table { width: 100%; border-collapse: separate; border-spacing: 0 4px; }
+          .history-table th { font-size: 0.75rem; text-transform: uppercase; color: #94a3b8; padding: 8px 12px; }
+          .history-table td { padding: 10px 12px; background: #f8fafc; font-size: 0.85rem; border: 1px solid #f1f5f9; }
+          .history-table tr td:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+          .history-table tr td:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
         `}</style>
 
         <div className="page-header d-flex justify-content-between align-items-center">
@@ -315,11 +369,33 @@ const Ec = () => {
                 <Col lg={2} md={4}><select className="filter-select" value={filters.vendor} onChange={(e) => handleFilterChange("vendor", e.target.value)}><option value="">All Vendors</option>{[...new Set(ecData.map(d => d.vendor))].map(vendor => (<option key={vendor} value={vendor}>{vendor}</option>))}</select></Col>
                 <Col lg={2} md={4}><select className="filter-select" value={filters.status} onChange={(e) => handleFilterChange("status", e.target.value)}><option value="">All Statuses</option><option value="Completed">Completed</option><option value="Pending">Pending</option></select></Col>
                 <Col lg={2} md={4}>
-                  <div className="d-flex position-relative align-items-center"><FontAwesomeIcon icon={faSortAmountDown} className="position-absolute ms-3" style={{color:'var(--text-secondary)', zIndex: 10}}/>
-                    <select className="filter-select ps-5" value={sortOption} onChange={(e) => setSortOption(e.target.value)}><option value="date-desc">Newest First</option><option value="date-asc">Oldest First</option><option value="totalFee-desc">Highest Cost</option><option value="totalFee-asc">Lowest Cost</option></select>
+                  <div className="search-container">
+                    <FontAwesomeIcon icon={faCalendarAlt} className="search-icon" />
+                    <input 
+                      type="date" 
+                      className="search-bar border-0" 
+                      value={filters.date} 
+                      onChange={(e) => handleFilterChange("date", e.target.value)} 
+                      style={{paddingLeft: '40px'}}
+                    />
                   </div>
                 </Col>
-                <Col lg={1} md={4}><button className="filter-toggle" onClick={clearFilters}><FontAwesomeIcon icon={faTimes}/></button></Col>
+                <Col lg={1} md={4}>
+                  <button 
+                    className="filter-toggle" 
+                    onClick={() => window.print()}
+                    style={{width: '100%', height: '48px', color: '#10b981', border: '1px solid #10b981', background: 'transparent'}}
+                    title="Print Current View"
+                  >
+                    <FontAwesomeIcon icon={faPrint} />
+                  </button>
+                </Col>
+                {/* <Col lg={1} md={4}>
+                  <select className="filter-select" value={sortOption} onChange={(e) => setSortOption(e.target.value)}>
+                    <option value="date-desc">Newest</option>
+                    <option value="date-asc">Oldest</option>
+                  </select>
+                </Col> */}
                 <Col lg={1} md={8} className="text-lg-end"><button className="btn-gold px-4" onClick={handleAddNew}><FontAwesomeIcon icon={faPlus}/></button></Col>
               </Row>
             </div>
@@ -390,12 +466,37 @@ const Ec = () => {
                     <Col md={4}><Form.Group><Form.Label className="form-label-modern">Amount</Form.Label><Form.Control type="text" className="form-control-modern" value={formatCurrency(currentEC.amount)} disabled /></Form.Group></Col>
                     <Col md={4}><Form.Group><Form.Label className="form-label-modern">Commission</Form.Label><Form.Control type="text" className="form-control-modern" value={formatCurrency(currentEC.commission)} disabled /></Form.Group></Col>
                     <Col md={4}><Form.Group><Form.Label className="form-label-modern">Others</Form.Label><Form.Control type="text" className="form-control-modern" value={formatCurrency(currentEC.others)} disabled /></Form.Group></Col>
+
+                    {/* Payment History Section */}
+                    {currentEC.payments && currentEC.payments.length > 0 && (
+                      <Col md={12} className="mt-4">
+                        <h6 className="fw-bold mb-3"><FontAwesomeIcon icon={faHistory} className="me-2"/> Payment History</h6>
+                        <Table responsive className="history-table">
+                          <thead>
+                            <tr>
+                              <th>Date & Time</th>
+                              <th>Amount</th>
+                              <th>Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {currentEC.payments.map((p, i) => (
+                              <tr key={i}>
+                                <td>{new Date(p.date).toLocaleDateString('en-GB')} | {p.time}</td>
+                                <td className="fw-bold text-success">₹{(p.amount || 0).toLocaleString()}</td>
+                                <td className="text-muted">{p.note || "-"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </Table>
+                      </Col>
+                    )}
                   </Row>
                   
                   <Row className="mt-4">
-                    <Col md={4}><Alert className="total-alert border-0 p-3"><span style={{fontSize: '0.9rem', display: 'block', color:'#b45309'}}>Cost</span> ₹{currentEC.totalFee.toLocaleString()}</Alert></Col>
-                    <Col md={4}><Alert className="total-alert border-0 p-3" style={{background: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)', color: '#064e3b'}}><span style={{fontSize: '0.9rem', display: 'block', color:'#047857'}}>Received</span> ₹{currentEC.received.toLocaleString()}</Alert></Col>
-                    <Col md={4}><Alert className="total-alert border-0 p-3" style={{background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)', color: '#7f1d1d'}}><span style={{fontSize: '0.9rem', display: 'block', color:'#b91c1c'}}>Balance</span> ₹{currentEC.balance.toLocaleString()}</Alert></Col>
+                    <Col md={4}><Alert className="total-alert border-0 p-3"><span style={{fontSize: '0.9rem', display: 'block', color:'#b45309'}}>Cost</span> ₹{(currentEC.totalFee || 0).toLocaleString()}</Alert></Col>
+                    <Col md={4}><Alert className="total-alert border-0 p-3" style={{background: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)', color: '#064e3b'}}><span style={{fontSize: '0.9rem', display: 'block', color:'#047857'}}>Received</span> ₹{(currentEC.received || 0).toLocaleString()}</Alert></Col>
+                    <Col md={4}><Alert className="total-alert border-0 p-3" style={{background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)', color: '#7f1d1d'}}><span style={{fontSize: '0.9rem', display: 'block', color:'#b91c1c'}}>Balance</span> ₹{(currentEC.balance || 0).toLocaleString()}</Alert></Col>
                   </Row>
                   
                 </Modal.Body>
@@ -445,19 +546,49 @@ const Ec = () => {
                       <Col md={4}><Form.Group><Form.Label className="form-label-modern">Amount (₹)</Form.Label><Form.Control type="number" className="form-control-modern" placeholder="0" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} /></Form.Group></Col>
                       <Col md={4}><Form.Group><Form.Label className="form-label-modern">Commission (₹)</Form.Label><Form.Control type="number" className="form-control-modern" placeholder="0" value={formData.commission} onChange={(e) => setFormData({ ...formData, commission: e.target.value })} /></Form.Group></Col>
                       <Col md={4}><Form.Group><Form.Label className="form-label-modern">Others (₹)</Form.Label><Form.Control type="number" className="form-control-modern" placeholder="0" value={formData.others} onChange={(e) => setFormData({ ...formData, others: e.target.value })} /></Form.Group></Col>
-                      <Col md={12}>
-                        <Form.Group>
-                          <Form.Label className="form-label-modern text-success">Actually Received (₹)</Form.Label>
-                          <Form.Control type="number" className="form-control-modern" style={{borderColor:'#10b981'}} placeholder="0" value={formData.received} onChange={(e) => setFormData({ ...formData, received: e.target.value })} />
-                        </Form.Group>
-                      </Col>
+                      
+                      {isEdit ? (
+                        <>
+                          <Col md={4}><Form.Group><Form.Label className="form-label-modern text-muted">Already Received (₹)</Form.Label><Form.Control type="text" className="form-control-modern" value={formatCurrency(formData.received)} disabled /></Form.Group></Col>
+                          <Col md={4}><Form.Group><Form.Label className="form-label-modern text-success">Add New Payment (₹)</Form.Label><Form.Control type="number" className="form-control-modern" style={{borderColor:'#10b981'}} placeholder="0" value={formData.newPayment} onChange={(e) => setFormData({ ...formData, newPayment: e.target.value })} /></Form.Group></Col>
+                          <Col md={4}><Form.Group><Form.Label className="form-label-modern">Payment Note</Form.Label><Form.Control type="text" className="form-control-modern" placeholder="e.g. Second installment" value={formData.paymentNote} onChange={(e) => setFormData({ ...formData, paymentNote: e.target.value })} /></Form.Group></Col>
+                        </>
+                      ) : (
+                        <Col md={12}>
+                          <Form.Group>
+                            <Form.Label className="form-label-modern text-success">Actually Received (₹)</Form.Label>
+                            <Form.Control type="number" className="form-control-modern" style={{borderColor:'#10b981'}} placeholder="0" value={formData.received} onChange={(e) => setFormData({ ...formData, received: e.target.value })} />
+                          </Form.Group>
+                        </Col>
+                      )}
                     </Row>
+
+                    {isEdit && currentEC.payments && currentEC.payments.length > 0 && (
+                      <div className="mt-4 p-3 rounded" style={{background: '#f8fafc', border: '1px solid #e2e8f0'}}>
+                         <h6 className="fw-bold fs-6 mb-2"><FontAwesomeIcon icon={faHistory} /> Payment History</h6>
+                         <div style={{maxHeight:'150px', overflowY:'auto'}}>
+                            <Table size="sm" className="mb-0">
+                               <thead><tr style={{fontSize:'0.7rem', color:'#94a3b8'}}><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
+                               <tbody>
+                                  {currentEC.payments.map((p, i) => (
+                                    <tr key={i} style={{fontSize:'0.85rem'}}>
+                                      <td>{new Date(p.date).toLocaleDateString('en-GB')}</td>
+                                      <td className="fw-bold">₹{p.amount.toLocaleString()}</td>
+                                      <td className="text-muted">{p.note}</td>
+                                    </tr>
+                                  ))}
+                               </tbody>
+                            </Table>
+                         </div>
+                      </div>
+                    )}
+
                     <Row className="mt-4 mb-2">
                        <Col md={6}>
                          <Alert className="total-alert border-0" style={{background:'#ffffff'}}><FontAwesomeIcon icon={faMoneyBillWave} className="me-2" /> Cost: {formatCurrency((parseFloat(formData.amount)||0) + (parseFloat(formData.commission)||0) + (parseFloat(formData.others)||0))}</Alert>
                        </Col>
                        <Col md={6}>
-                         <Alert className="total-alert border-0" style={{background:'#ffffff', color: '#ef4444'}}><FontAwesomeIcon icon={faBalanceScale} className="me-2" /> Due Balance: {formatCurrency(((parseFloat(formData.amount)||0) + (parseFloat(formData.commission)||0) + (parseFloat(formData.others)||0)) - (parseFloat(formData.received)||0))}</Alert>
+                         <Alert className="total-alert border-0" style={{background:'#ffffff', color: '#ef4444'}}><FontAwesomeIcon icon={faBalanceScale} className="me-2" /> Due Balance: {formatCurrency(((parseFloat(formData.amount)||0) + (parseFloat(formData.commission)||0) + (parseFloat(formData.others)||0)) - (parseFloat(formData.received)||0) - (parseFloat(formData.newPayment)||0))}</Alert>
                        </Col>
                     </Row>
                   </Form>
