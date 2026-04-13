@@ -32,10 +32,22 @@ router.get('/:id', async (req, res) => {
 
 // Create new document
 router.post('/', async (req, res) => {
-  const document = new Document(req.body);
+  const data = { ...req.body };
+  
+  // If document is created with an initial 'received' value, initialize payments history
+  if (data.received && Number(data.received) > 0 && (!data.payments || data.payments.length === 0)) {
+    const now = new Date();
+    data.payments = [{
+      amount: Number(data.received),
+      date: now,
+      time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      note: 'Initial Payment'
+    }];
+  }
+
+  const document = new Document(data);
   try {
     const newDocument = await document.save();
-    // Return populated document immediately
     const populatedDoc = await Document.findById(newDocument._id).populate('client');
     res.status(201).json(populatedDoc);
   } catch (err) {
@@ -46,16 +58,38 @@ router.post('/', async (req, res) => {
 // Update document (including payments/received amounts)
 router.put('/:id', async (req, res) => {
   try {
-    // We use findById, then modify, then save() to trigger the pre('save') middleware
     const document = await Document.findById(req.params.id);
     if (!document) return res.status(404).json({ message: 'Document not found' });
 
-    // Update fields
+    // Handle special NEW payment entry
+    if (req.body.newPayment && Number(req.body.newPayment) > 0) {
+      const now = new Date();
+      document.payments.push({
+        amount: Number(req.body.newPayment),
+        date: now,
+        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        note: req.body.paymentNote || 'Additional Payment'
+      });
+      // Delete newPayment from body so it doesn't try to overwrite a model field
+      delete req.body.newPayment;
+      delete req.body.paymentNote;
+    }
+
+    // Update other fields, filtering out protected ones
+    const protectedFields = ['_id', 'id', '__v', 'payments', 'createdAt', 'updatedAt'];
     Object.keys(req.body).forEach(key => {
-      document[key] = req.body[key];
+      if (!protectedFields.includes(key)) {
+        // Critical: Extract ID if client was sent as a populated object
+        if (key === 'client' && req.body[key] && typeof req.body[key] === 'object') {
+          document[key] = req.body[key]._id;
+        } else {
+          document[key] = req.body[key];
+        }
+      }
     });
 
     const updatedDocument = await document.save();
+    console.log(`✅ Success: Updated document ${updatedDocument.recordNo || updatedDocument._id}. New balance: ${updatedDocument.balance}`);
     const populatedDoc = await Document.findById(updatedDocument._id).populate('client');
     res.json(populatedDoc);
   } catch (err) {
