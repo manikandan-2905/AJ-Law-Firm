@@ -22,6 +22,7 @@ import {
   faBell
 } from "@fortawesome/free-solid-svg-icons";
 import { motion, AnimatePresence } from "framer-motion";
+import API_BASE_URL from "../config";
 
 // Animation Variants
 const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.1 } } };
@@ -62,8 +63,8 @@ const Dashboard = () => {
     const fetchDashboardData = async () => {
       try {
         const [clientsRes, docsRes] = await Promise.all([
-          fetch('/api/clients'),
-          fetch('/api/documents')
+          fetch(`${API_BASE_URL}/api/clients`),
+          fetch(`${API_BASE_URL}/api/documents`)
         ]);
         const clients = await clientsRes.json();
         const docs = await docsRes.json();

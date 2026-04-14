@@ -10,6 +10,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "./Sidebar";
+import API_BASE_URL from "../config";
 
 // Enhanced dummy data for Vendor records
 const dummyVendorData = [
@@ -79,8 +80,8 @@ const Vendor = () => {
   const fetchData = async () => {
     try {
       const [clientsRes, docsRes] = await Promise.all([
-        fetch('/api/clients'),
-        fetch('/api/documents')
+        fetch(`${API_BASE_URL}/api/clients`),
+        fetch(`${API_BASE_URL}/api/documents`)
       ]);
       const clients = await clientsRes.json();
       const docs = await docsRes.json();
@@ -327,13 +328,14 @@ const Vendor = () => {
        status: newVendorData.status
     };
     if (isEditingVendor) {
-      await fetch(`/api/clients/${newVendorData.id}`, {
+      const cleanId = newVendorData.id?.toString().split(':')[0];
+      await fetch(`${API_BASE_URL}/api/clients/${cleanId}`, {
          method: 'PUT',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify(payload)
       });
     } else {
-      await fetch('/api/clients', {
+      await fetch(`${API_BASE_URL}/api/clients`, {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify(payload)
@@ -346,7 +348,8 @@ const Vendor = () => {
   const handleDeleteVendor = async (e, vendorId) => {
     e.stopPropagation();
     if(window.confirm("Are you sure you want to delete this vendor?")) {
-      await fetch(`/api/clients/${vendorId}`, { method: 'DELETE' });
+      const cleanId = vendorId?.toString().split(':')[0];
+      await fetch(`${API_BASE_URL}/api/clients/${cleanId}`, { method: 'DELETE' });
       fetchData();
     }
   };
@@ -379,13 +382,14 @@ const Vendor = () => {
         payload.referenceVendor = "";
     }
     if (isEditingCustomer) {
-      await fetch(`/api/clients/${newCustomerData.id}`, {
+      const cleanId = newCustomerData.id?.toString().split(':')[0];
+      await fetch(`${API_BASE_URL}/api/clients/${cleanId}`, {
          method: 'PUT',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify(payload)
       });
     } else {
-      await fetch('/api/clients', {
+      await fetch(`${API_BASE_URL}/api/clients`, {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify(payload)
@@ -398,7 +402,8 @@ const Vendor = () => {
   const handleDeleteCustomer = async (e, customerId) => {
     e.stopPropagation();
     if(window.confirm("Are you sure you want to delete this customer?")) {
-      await fetch(`/api/clients/${customerId}`, { method: 'DELETE' });
+      const cleanId = customerId?.toString().split(':')[0];
+      await fetch(`${API_BASE_URL}/api/clients/${cleanId}`, { method: 'DELETE' });
       fetchData();
     }
   };

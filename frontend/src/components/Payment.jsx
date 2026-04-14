@@ -9,6 +9,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "./Sidebar";
+import API_BASE_URL from "../config";
 
 const dummyPaymentData = [
   { id: 1, date: "2024-10-01", recordType: "EC", recordNo: "EC001", vendor: "Vendor A", customerName: "John Doe", office: "Office 1", nagar: "Nagar 1", tpNo: "TP001", plotNo: "A1", reference: "REF001", deed: "Sale Deed", docNo: "DOC001", fieldVisit: "Yes", returnDocument: "No", amount: 50000, commission: 5000, others: 1000, total: 56000, status: "Paid" },
@@ -37,7 +38,7 @@ const Payment = () => {
 
   const fetchData = async () => {
     try {
-      const res = await fetch('/api/documents');
+      const res = await fetch(`${API_BASE_URL}/api/documents`);
       const data = await res.json();
       
       const flattenedPayments = [];

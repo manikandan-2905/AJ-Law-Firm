@@ -10,6 +10,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "./Sidebar";
+import API_BASE_URL from "../config";
 
 // Enhanced dummy data for EC records including received and balance
 const dummyECData = [
@@ -55,8 +56,8 @@ const Ec = () => {
   const fetchData = async () => {
     try {
       const [res, clientsRes] = await Promise.all([
-        fetch('/api/documents?documentType=EC'),
-        fetch('/api/clients')
+        fetch(`${API_BASE_URL}/api/documents?documentType=EC`),
+        fetch(`${API_BASE_URL}/api/clients`)
       ]);
       const data = await res.json();
       const clientsData = await clientsRes.json();
@@ -142,7 +143,7 @@ const Ec = () => {
     if (window.confirm("Are you sure you want to delete this record?")) { 
       try {
         const cleanId = id?.toString().split(':')[0]; // Sanitize ID
-        await fetch(`/api/documents/${cleanId}`, { method: 'DELETE' });
+        await fetch(`${API_BASE_URL}/api/documents/${cleanId}`, { method: 'DELETE' });
         fetchData();
       } catch(e) { console.error(e); }
     } 
@@ -188,13 +189,13 @@ const Ec = () => {
         let res;
         if (isEdit) { 
            const cleanId = currentEC.id?.toString().split(':')[0]; // Sanitize ID
-           res = await fetch(`/api/documents/${cleanId}`, {
+           res = await fetch(`${API_BASE_URL}/api/documents/${cleanId}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
            });
         } else { 
-           res = await fetch('/api/documents', {
+           res = await fetch(`${API_BASE_URL}/api/documents`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
