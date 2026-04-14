@@ -2,6 +2,17 @@ const express = require('express');
 const router = express.Router();
 const Document = require('../models/Document');
 
+// Helper to validate and sanitize MongoDB ObjectID (removes suffixes like :1)
+const sanitizeId = (id) => {
+  if (!id) return null;
+  // If it's a 24-char hex string, it's already clean
+  if (/^[0-9a-fA-F]{24}$/.test(id)) return id;
+  // If it's longer but starts with 24 hex chars (potential suffix), take the first 24
+  const potentialId = id.substring(0, 24);
+  if (/^[0-9a-fA-F]{24}$/.test(potentialId)) return potentialId;
+  return null;
+};
+
 // Get all documents, optionally filter by type or client
 router.get('/', async (req, res) => {
   try {
@@ -22,10 +33,17 @@ router.get('/', async (req, res) => {
 // Get single document
 router.get('/:id', async (req, res) => {
   try {
-    const document = await Document.findById(req.params.id).populate('client');
+    const id = sanitizeId(req.params.id);
+    if (!id) {
+      console.warn(`⚠️ Warning: Invalid document ID format received: ${req.params.id}`);
+      return res.status(400).json({ message: `Invalid document ID format: ${req.params.id}` });
+    }
+
+    const document = await Document.findById(id).populate('client');
     if (!document) return res.status(404).json({ message: 'Document not found' });
     res.json(document);
   } catch (err) {
+    console.error(`❌ Error fetching document: ${err.message}`);
     res.status(500).json({ message: err.message });
   }
 });
@@ -58,7 +76,13 @@ router.post('/', async (req, res) => {
 // Update document (including payments/received amounts)
 router.put('/:id', async (req, res) => {
   try {
-    const document = await Document.findById(req.params.id);
+    const id = sanitizeId(req.params.id);
+    if (!id) {
+      console.warn(`⚠️ Warning: Invalid document ID format for update: ${req.params.id}`);
+      return res.status(400).json({ message: `Invalid document ID format: ${req.params.id}` });
+    }
+
+    const document = await Document.findById(id);
     if (!document) return res.status(404).json({ message: 'Document not found' });
 
     // Handle special NEW payment entry
@@ -93,6 +117,7 @@ router.put('/:id', async (req, res) => {
     const populatedDoc = await Document.findById(updatedDocument._id).populate('client');
     res.json(populatedDoc);
   } catch (err) {
+    console.error(`❌ Error updating document ${req.params.id}: ${err.message}`);
     res.status(400).json({ message: err.message });
   }
 });
@@ -100,10 +125,18 @@ router.put('/:id', async (req, res) => {
 // Delete document
 router.delete('/:id', async (req, res) => {
   try {
-    const document = await Document.findByIdAndDelete(req.params.id);
+    const id = sanitizeId(req.params.id);
+    if (!id) {
+      console.warn(`⚠️ Warning: Invalid document ID format for delete: ${req.params.id}`);
+      return res.status(400).json({ message: `Invalid document ID format: ${req.params.id}` });
+    }
+
+    const document = await Document.findByIdAndDelete(id);
     if (!document) return res.status(404).json({ message: 'Document not found' });
+    console.log(`✅ Success: Deleted document ${id}`);
     res.json({ message: 'Document deleted successfully' });
   } catch (err) {
+    console.error(`❌ Error deleting document ${req.params.id}: ${err.message}`);
     res.status(500).json({ message: err.message });
   }
 });

@@ -141,7 +141,8 @@ const Ec = () => {
     e.stopPropagation(); 
     if (window.confirm("Are you sure you want to delete this record?")) { 
       try {
-        await fetch(`/api/documents/${id}`, { method: 'DELETE' });
+        const cleanId = id?.toString().split(':')[0]; // Sanitize ID
+        await fetch(`/api/documents/${cleanId}`, { method: 'DELETE' });
         fetchData();
       } catch(e) { console.error(e); }
     } 
@@ -186,7 +187,8 @@ const Ec = () => {
     try {
         let res;
         if (isEdit) { 
-           res = await fetch(`/api/documents/${currentEC.id}`, {
+           const cleanId = currentEC.id?.toString().split(':')[0]; // Sanitize ID
+           res = await fetch(`/api/documents/${cleanId}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
