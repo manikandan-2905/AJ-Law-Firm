@@ -26,6 +26,7 @@ router.get('/', async (req, res) => {
       .sort({ date: -1, createdAt: -1 });
     res.json(documents);
   } catch (err) {
+    console.error('❌ Error fetching documents:', err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -43,7 +44,7 @@ router.get('/:id', async (req, res) => {
     if (!document) return res.status(404).json({ message: 'Document not found' });
     res.json(document);
   } catch (err) {
-    console.error(`❌ Error fetching document: ${err.message}`);
+    console.error(`❌ Error fetching document ${req.params.id}:`, err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -65,11 +66,13 @@ router.post('/', async (req, res) => {
 
   const document = new Document(data);
   try {
+    console.log('📝 Creating NEW document:', data.documentType, data.recordNo);
     const newDocument = await document.save();
     const populatedDoc = await Document.findById(newDocument._id).populate('client');
     res.status(201).json(populatedDoc);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    console.error('❌ POST Document Error:', err);
+    res.status(400).json({ message: err.message, error: err.toString() });
   }
 });
 
@@ -117,8 +120,8 @@ router.put('/:id', async (req, res) => {
     const populatedDoc = await Document.findById(updatedDocument._id).populate('client');
     res.json(populatedDoc);
   } catch (err) {
-    console.error(`❌ Error updating document ${req.params.id}: ${err.message}`);
-    res.status(400).json({ message: err.message });
+    console.error(`❌ Error updating document ${req.params.id}:`, err);
+    res.status(400).json({ message: err.message, error: err.toString() });
   }
 });
 
@@ -136,7 +139,7 @@ router.delete('/:id', async (req, res) => {
     console.log(`✅ Success: Deleted document ${id}`);
     res.json({ message: 'Document deleted successfully' });
   } catch (err) {
-    console.error(`❌ Error deleting document ${req.params.id}: ${err.message}`);
+    console.error(`❌ Error deleting document ${req.params.id}:`, err);
     res.status(500).json({ message: err.message });
   }
 });

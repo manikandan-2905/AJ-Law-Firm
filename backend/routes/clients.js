@@ -23,6 +23,7 @@ router.get('/', async (req, res) => {
     const clients = await Client.find().sort({ createdAt: -1 });
     res.json(clients);
   } catch (err) {
+    console.error('❌ Error fetching clients:', err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -51,6 +52,7 @@ router.post('/', async (req, res) => {
     const newClient = await client.save();
     res.status(201).json(newClient);
   } catch (err) {
+    console.error('❌ POST Client Error:', err);
     res.status(400).json({ message: err.message });
   }
 });

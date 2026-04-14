@@ -32,6 +32,28 @@ app.get('/', (req, res) => {
     res.send('AJ Law Firm API Backend is running!');
 });
 
+// GLOBAL ERROR HANDLER - Catch all unhandled route errors
+app.use((err, req, res, next) => {
+    console.error('🛑 UNHANDLED ERROR STACK:', err.stack);
+    console.error('🛑 ERROR DETAILS:', {
+        message: err.message,
+        path: req.path,
+        method: req.method,
+        body: req.body
+    });
+    
+    // In Express 5, next is likely where the error originated if it's "next is not a function"
+    if (typeof next !== 'function') {
+        console.error('🚨 CRITICAL: "next" is indeed not a function in this scope!');
+    }
+
+    res.status(500).json({ 
+        message: 'Internal Server Error', 
+        error: err.message,
+        tip: 'Check server logs for the full stack trace'
+    });
+});
+
 // Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

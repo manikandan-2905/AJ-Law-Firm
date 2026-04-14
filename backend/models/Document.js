@@ -65,7 +65,7 @@ const documentSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Pre-save middleware to calculate totalFee and balance accurately
-documentSchema.pre('save', function (next) {
+documentSchema.pre('save', async function () {
   // Only billable items should contribute to totalFee (which is the Cost shown to user)
   if (this.documentType === 'EC' || this.documentType === 'Nagal') {
       this.totalFee = Number(this.amount || 0) + Number(this.commission || 0) + Number(this.others || 0);
@@ -87,7 +87,6 @@ documentSchema.pre('save', function (next) {
   if (this.balance <= 0 && this.status === 'Pending') {
     this.status = 'Completed';
   }
-  next();
 });
 
 module.exports = mongoose.model('Document', documentSchema);
