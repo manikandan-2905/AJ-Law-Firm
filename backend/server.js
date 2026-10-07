@@ -15,7 +15,7 @@ app.use(express.json());
 
 // Database Connection
 // The user provided MONGO_URI in plain text in the prompt, but we should use process.env if available, falling back to the plain text if not strictly configured in .env yet.
-const MONGODB_URI = process.env.MONGO_URI || "mongodb+srv://mani:mani123@image-generator.x56ji.mongodb.net/?appName=Image-generator";
+
 
 mongoose.connect(MONGODB_URI, {
     // useNewUrlParser and useUnifiedTopology are deprecated in latest drivers, but keeping standard connection
